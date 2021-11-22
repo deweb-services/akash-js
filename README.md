@@ -5,7 +5,7 @@ AkashJS implements much of the [Akash command-line](https://docs.akash.network/g
 ## Installation
 This library is still highly experimental, and has not been published to a registry yet. For now, install in your project using:
 ```shell
-npm install https://github.com/spacepotahto/akashjs
+npm install @dewebjs/akash-js
 ```
 ## Proxy Server
 A proxy server implementation is included in the [proxy](proxy) directory that can proxy RPC requests and Provider Gateway requests. It's needed in a browser setting because:
