@@ -143,15 +143,15 @@ export async function createPEMBlocks(
   );
   //endregion
 
-  await certificate.subjectPublicKeyInfo.importKey(keyPair.publicKey);
-  await certificate.sign(keyPair.privateKey, hashAlgorithm);
+  await certificate.subjectPublicKeyInfo.importKey(keyPair.publicKey!);
+  await certificate.sign(keyPair.privateKey!, hashAlgorithm);
 
   return {
     owner: address,
     serialNumber: serialNumber,
     certificate: certificate.toSchema(true).toBER(false),
-    privateKey: await crypto.exportKey("pkcs8", keyPair.privateKey),
-    publicKey: await crypto.exportKey("spki", keyPair.publicKey)
+    privateKey: await crypto.exportKey("pkcs8", keyPair.privateKey!),
+    publicKey: await crypto.exportKey("spki", keyPair.publicKey!)
   };
 };
 

@@ -1,9 +1,9 @@
 import Long from "long";
 import { Akash, defaultFee, denom } from "../akash/akash";
-import { MsgCreateDeployment } from "../codec/akash/deployment/v1beta1/deployment";
+import { MsgCreateDeployment } from "../codec/akash/deployment/v1beta2/deployment";
 import { BroadcastTxResponse } from "@cosmjs/stargate";
 import { TxParams } from "../akash/types";
-import { Coin } from "../codec/cosmos/base/v1beta1/coin";
+import { Coin } from "../codec/cosmos/base/v1beta2/coin";
 import { SDL, currentBlockHeight } from "../utils/deployment";
 
 export interface TxDeploymentCreateParams extends TxParams {
@@ -36,12 +36,14 @@ export class TxDeploymentCreate {
     const request: MsgCreateDeployment = {
       id: {
         owner: owner,
-        dseq: new Long(dseq)
+        dseq
       },
       groups: sdl.groups,
       version: new Uint8Array(await sdl.manifestVersion()),
-      deposit: deposit
+      deposit: deposit,
+      depositor: owner
     };
+    console.log("SUKA", request);
 
     return this.akash.signingClient.deploymentCreate(owner, request, fee, memo);
   }

@@ -1,9 +1,9 @@
 import Long from "long";
 import { Akash, defaultFee } from "../akash/akash";
-import { MsgDepositDeployment } from "../codec/akash/deployment/v1beta1/deployment";
+import { MsgDepositDeployment } from "../codec/akash/deployment/v1beta2/deployment";
 import { BroadcastTxResponse } from "@cosmjs/stargate";
 import { TxParams } from "../akash/types";
-import { Coin } from "../codec/cosmos/base/v1beta1/coin";
+import { Coin } from "../codec/cosmos/base/v1beta2/coin";
 
 export interface TxDeploymentDepositParams extends TxParams {
   dseq: number;
@@ -17,24 +17,26 @@ export class TxDeploymentDeposit {
     this.akash = akash;
   }
 
-  public async params(params: TxDeploymentDepositParams): Promise<BroadcastTxResponse> {
+  public async params(
+    params: TxDeploymentDepositParams
+  ): Promise<BroadcastTxResponse> {
     const owner = this.akash.address;
 
-    const {
-      memo = "",
-      fee = defaultFee,
-      dseq,
-      amount
-    } = params;
+    const { memo = "", fee = defaultFee, dseq, amount } = params;
 
     const request: MsgDepositDeployment = {
       id: {
         owner: owner,
-        dseq: new Long(dseq)
+        dseq: new Number(dseq),
       },
-      amount: amount
+      amount: amount,
     };
 
-    return this.akash.signingClient.deploymentDeposit(owner, request, fee, memo);
+    return this.akash.signingClient.deploymentDeposit(
+      owner,
+      request,
+      fee,
+      memo
+    );
   }
 }

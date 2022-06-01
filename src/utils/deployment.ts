@@ -2,9 +2,10 @@ import { Akash } from "../akash/akash";
 import { getCrypto } from "pkijs/src/common";
 import { stringToArrayBuffer } from "pvutils";
 import yaml, { DEFAULT_SCHEMA } from "js-yaml";
-import { GroupSpec } from "../codec/akash/deployment/v1beta1/group";
-import { Attribute } from "../codec/akash/base/v1beta1/attribute";
-import { Endpoint, Endpoint_Kind } from "../codec/akash/base/v1beta1/endpoint";
+import { GroupSpec } from "../codec/akash/deployment/v1beta2/group";
+import { Attribute } from "../codec/akash/base/v1beta2/attribute";
+import { Endpoint, Endpoint_Kind } from "../codec/akash/base/v1beta2/endpoint";
+import { Storage } from "../codec/akash/base/v1beta2/storage";
 import { BroadcastTxResponse } from "@cosmjs/stargate";
 import { findAttribute, parseRawLog } from "@cosmjs/stargate/build/logs";
 
@@ -24,15 +25,15 @@ export interface Service {
   Command: string[] | null;
   Args: string[] | null;
   Env: string[] | null;
-  Resources: ResourceUnits
+  Resources: ResourceUnits;
   Count: number;
-  Expose: ServiceExpose[] | null
+  Expose: ServiceExpose[] | null;
 }
 
 export interface ServiceExpose {
   Port: number; // Port on the container
   ExternalPort?: number; // Port on the service definition (default 0?)
-  Proto: ServiceProtocol // 
+  Proto: ServiceProtocol; //
   Service: string; // default ""
   Global: boolean; // default false
   Hosts: string[] | null;
@@ -44,10 +45,10 @@ export type ServiceProtocol = "TCP" | "UDP";
 export interface ServiceExposeHTTPOptions {
   MaxBodySize: number; // default 1048576
   ReadTimeout: number; // default 60000
-	SendTimeout: number; // default 60000
-	NextTries: number; // default 3
-	NextTimeout: number; // default 60000
-	NextCases: (
+  SendTimeout: number; // default 60000
+  NextTries: number; // default 3
+  NextTimeout: number; // default 60000
+  NextCases: (
     | "error"
     | "timeout"
     | "403"
@@ -58,13 +59,13 @@ export interface ServiceExposeHTTPOptions {
     | "503"
     | "504"
     | "off"
-  )[] // default ["error", "timeout"]
+  )[]; // default ["error", "timeout"]
 }
 
 export interface ResourceUnits {
   cpu: CPU;
   memory: Memory;
-  storage: Storage;
+  storage: Storage[];
   endpoints: Endpoint[] | null;
 }
 
@@ -78,11 +79,6 @@ export interface Memory {
   attributes?: Attribute[];
 }
 
-export interface Storage {
-  size: ResourceValue;
-  attributes?: Attribute[];
-}
-
 export interface ResourceValue {
   val: string; // int string
 }
@@ -90,7 +86,8 @@ export interface ResourceValue {
 export interface SDLSpec {
   version: "2.0"; // only version 2.0 supported by Akash at the moment
   services: {
-    [key: string]: { // Service Name
+    [key: string]: {
+      // Service Name
       image: Service["Image"];
       depends_on?: Service["Name"][];
       command?: Service["Command"];
@@ -104,7 +101,7 @@ export interface SDLSpec {
         to?: {
           service?: ServiceExpose["Service"];
           global?: ServiceExpose["Global"];
-        }[]
+        }[];
         http_options?: {
           max_body_size?: ServiceExpose["HTTPOptions"]["MaxBodySize"];
           read_timeout?: ServiceExpose["HTTPOptions"]["ReadTimeout"];
@@ -112,49 +109,54 @@ export interface SDLSpec {
           next_tries?: ServiceExpose["HTTPOptions"]["NextTries"];
           next_timeout?: ServiceExpose["HTTPOptions"]["NextTimeout"];
           next_cases?: ServiceExpose["HTTPOptions"]["NextCases"];
-        }
-      }[]
-    }
+        };
+      }[];
+    };
   };
   profiles: {
     compute: {
-      [key: string]: { // Profile Name
+      [key: string]: {
+        // Profile Name
         resources: {
           cpu: {
-            units: number | string,
-          }
+            units: number | string;
+          };
           memory: {
-            size: string
-          }
+            size: string;
+          };
           storage: {
-            size: string
-          }
-        }
-      }
-    }
+            size: string;
+          };
+        };
+      };
+    };
     placement: {
-      [key: string]: { // Group Name
+      [key: string]: {
+        // Group Name
         attributes?: Record<Attribute["key"], Attribute["value"]>;
         signedBy?: {
-          allOf?: string[],
-          anyOf?: string[]
-        }
+          allOf?: string[];
+          anyOf?: string[];
+        };
         pricing: {
-          [key: string]: { // Profile Name
-            denom: string,
-            amount: number
-          }
-        }
-      }
-    }
+          [key: string]: {
+            // Profile Name
+            denom: string;
+            amount: number;
+          };
+        };
+      };
+    };
   };
   deployment: {
-    [key: string]: { // Service Name
-      [key: string]: { // Group Name
-        profile: string // Profile Name
-        count: Service["Count"]
-      }
-    }
+    [key: string]: {
+      // Service Name
+      [key: string]: {
+        // Group Name
+        profile: string; // Profile Name
+        count: Service["Count"];
+      };
+    };
   };
 }
 
@@ -185,7 +187,8 @@ export class SDL {
 
     this.groups = [];
     Object.entries(groupServices).forEach(([groupName, serviceNames]) => {
-      const groupAttributes = this.data.profiles.placement[groupName].attributes || {};
+      const groupAttributes =
+        this.data.profiles.placement[groupName].attributes || {};
       const groupSignedBy = this.data.profiles.placement[groupName].signedBy;
       this.groups.push({
         name: groupName,
@@ -193,22 +196,33 @@ export class SDL {
           attributes: Object.entries(groupAttributes).map(([key, value]) => {
             return { key: key, value: value };
           }),
-          signedBy: groupSignedBy ? {
-            allOf: groupSignedBy.allOf || [],
-            anyOf: groupSignedBy.anyOf || [],
-          } : undefined
+          signedBy: groupSignedBy
+            ? {
+                allOf: groupSignedBy.allOf || [],
+                anyOf: groupSignedBy.anyOf || [],
+              }
+            : undefined,
         },
         resources: serviceNames.map((serviceName) => {
-          const profileName = this.data.deployment[serviceName][groupName].profile;
-          const serviceComputeResources = this.data.profiles.compute[profileName].resources;
-          const normalizedCPUUnit = this.normalizeCPUUnit(serviceComputeResources.cpu.units.toString());
-          const normalizedMemoryUnit = this.normalizeMemoryStorageUnit(serviceComputeResources.memory.size);
-          const normalizedStorageUnit = this.normalizeMemoryStorageUnit(serviceComputeResources.storage.size);
+          const profileName =
+            this.data.deployment[serviceName][groupName].profile;
+          const serviceComputeResources =
+            this.data.profiles.compute[profileName].resources;
+          const normalizedCPUUnit = this.normalizeCPUUnit(
+            serviceComputeResources.cpu.units.toString()
+          );
+          const normalizedMemoryUnit = this.normalizeMemoryStorageUnit(
+            serviceComputeResources.memory.size
+          );
+          const normalizedStorageUnit = this.normalizeMemoryStorageUnit(
+            serviceComputeResources.storage.size
+          );
 
           const endpoints: Endpoint[] = [];
           this.data.services[serviceName].expose.forEach((expose) => {
             const proto = expose.proto || "tcp"; // default tcp
-            const isTCP = proto === "http" || proto === "https" || proto === "tcp";
+            const isTCP =
+              proto === "http" || proto === "https" || proto === "tcp";
             const externalPortExpose = expose.as || expose.port;
             if (expose.to) {
               expose.to.forEach((to) => {
@@ -218,7 +232,7 @@ export class SDL {
                   if (shouldBeIngress) {
                     kind = Endpoint_Kind.SHARED_HTTP;
                   }
-                  endpoints.push({ kind: kind });
+                  endpoints.push({ kind: kind, sequence_number: kind });
                 }
               });
             }
@@ -227,32 +241,44 @@ export class SDL {
           return {
             count: this.data.deployment[serviceName][groupName].count,
             price: {
-              denom: this.data.profiles.placement[groupName].pricing[profileName].denom,
-              amount: this.data.profiles.placement[groupName].pricing[profileName].amount.toString()
+              denom:
+                this.data.profiles.placement[groupName].pricing[profileName]
+                  .denom,
+              amount:
+                this.data.profiles.placement[groupName].pricing[
+                  profileName
+                ].amount.toString(),
             },
             resources: {
               cpu: {
                 units: {
-                  val: new Uint8Array(stringToArrayBuffer(normalizedCPUUnit))
+                  val: new Uint8Array(stringToArrayBuffer(normalizedCPUUnit)),
                 },
-                attributes: []
+                attributes: [],
               },
               memory: {
                 quantity: {
-                  val: new Uint8Array(stringToArrayBuffer(normalizedMemoryUnit))
+                  val: new Uint8Array(
+                    stringToArrayBuffer(normalizedMemoryUnit)
+                  ),
                 },
-                attributes: []
+                attributes: [],
               },
-              storage: {
-                quantity: {
-                  val: new Uint8Array(stringToArrayBuffer(normalizedStorageUnit))
+              storage: [
+                {
+                  name: "default",
+                  quantity: {
+                    val: new Uint8Array(
+                      stringToArrayBuffer(normalizedStorageUnit)
+                    ),
+                  },
+                  attributes: [],
                 },
-                attributes: []
-              },
-              endpoints: endpoints
-            }
+              ],
+              endpoints: endpoints,
+            },
           };
-        })
+        }),
       });
     });
 
@@ -261,11 +287,19 @@ export class SDL {
       this.manifest.push({
         Name: groupName,
         Services: serviceNames.map((serviceName) => {
-          const profileName = this.data.deployment[serviceName][groupName].profile;
-          const serviceComputeResources = this.data.profiles.compute[profileName].resources;
-          const normalizedCPUUnit = this.normalizeCPUUnit(serviceComputeResources.cpu.units.toString());
-          const normalizedMemoryUnit = this.normalizeMemoryStorageUnit(serviceComputeResources.memory.size);
-          const normalizedStorageUnit = this.normalizeMemoryStorageUnit(serviceComputeResources.storage.size);
+          const profileName =
+            this.data.deployment[serviceName][groupName].profile;
+          const serviceComputeResources =
+            this.data.profiles.compute[profileName].resources;
+          const normalizedCPUUnit = this.normalizeCPUUnit(
+            serviceComputeResources.cpu.units.toString()
+          );
+          const normalizedMemoryUnit = this.normalizeMemoryStorageUnit(
+            serviceComputeResources.memory.size
+          );
+          const normalizedStorageUnit = this.normalizeMemoryStorageUnit(
+            serviceComputeResources.storage.size
+          );
 
           const serviceExpose = this.data.services[serviceName].expose;
           const flattenedExpose: ServiceExpose[] = [];
@@ -286,11 +320,14 @@ export class SDL {
                   SendTimeout: exposeHTTPOptions?.send_timeout || 60000,
                   NextTries: exposeHTTPOptions?.next_tries || 3,
                   NextTimeout: exposeHTTPOptions?.next_timeout || 60000,
-                  NextCases: exposeHTTPOptions?.next_cases || ["error", "timeout"]
-                }
+                  NextCases: exposeHTTPOptions?.next_cases || [
+                    "error",
+                    "timeout",
+                  ],
+                },
               });
             });
-          })
+          });
 
           const service = this.data.services[serviceName];
           return {
@@ -302,25 +339,27 @@ export class SDL {
             Resources: {
               cpu: {
                 units: {
-                  val: normalizedCPUUnit
-                }
+                  val: normalizedCPUUnit,
+                },
               },
               memory: {
                 size: {
-                  val: normalizedMemoryUnit
-                }
+                  val: normalizedMemoryUnit,
+                },
               },
-              storage: {
-                size: {
-                  val: normalizedStorageUnit
-                }
-              },
-              endpoints: null
+              storage: [
+                {
+                  size: {
+                    val: normalizedStorageUnit,
+                  },
+                },
+              ],
+              endpoints: null,
             },
             Count: this.data.deployment[serviceName][groupName].count,
-            Expose: flattenedExpose.length > 0 ? flattenedExpose : null
+            Expose: flattenedExpose.length > 0 ? flattenedExpose : null,
           };
-        })
+        }),
       });
     });
   }
@@ -336,13 +375,13 @@ export class SDL {
   private sortJSON(obj: any): any {
     if (Array.isArray(obj)) {
       // golang version doesn't sort on arrays it seems
-      return obj.map(e => this.sortJSON(e));
+      return obj.map((e) => this.sortJSON(e));
     }
-    if (obj && typeof obj === 'object') {
+    if (obj && typeof obj === "object") {
       return Object.fromEntries(
-        Object.entries(obj).map(
-          ([k, v]) => [k, this.sortJSON(v)]
-        ).sort()
+        Object.entries(obj)
+          .map(([k, v]) => [k, this.sortJSON(v)])
+          .sort()
       );
     }
     return obj;
@@ -357,11 +396,11 @@ export class SDL {
     let lhs = parseFloat(unit);
     const rhs = unit[unit.length - 1];
     if (rhs !== "m") {
-      lhs *= 1000
+      lhs *= 1000;
     }
     return lhs.toString();
   }
-  
+
   private normalizeMemoryStorageUnit(unit: string): string {
     // Normalizes a user given memory or storage unit string to number of bytes. E.g.:
     // "512Mi" -> "536870912" (512 * 1024^2)
@@ -369,16 +408,16 @@ export class SDL {
     const suffixValueMap: { [key: string]: number } = {
       k: 1000,
       Ki: 1024,
-      M: 1000**2,
-      Mi: 1024**2,
-      G: 1000**3,
-      Gi: 1024**3,
-      T: 1000**4,
-      Ti: 1024**4,
-      P: 1000**5,
-      Pi: 1024**5,
-      E: 1000**6,
-      Ei: 1024**6
+      M: 1000 ** 2,
+      Mi: 1024 ** 2,
+      G: 1000 ** 3,
+      Gi: 1024 ** 3,
+      T: 1000 ** 4,
+      Ti: 1024 ** 4,
+      P: 1000 ** 5,
+      Pi: 1024 ** 5,
+      E: 1000 ** 6,
+      Ei: 1024 ** 6,
     };
     const lhs = parseFloat(unit);
     const rhs = unit.replace(lhs.toString(), "");
@@ -392,12 +431,14 @@ export async function currentBlockHeight(akash: Akash): Promise<number> {
   return response.syncInfo.latestBlockHeight;
 }
 
-export function findDeploymentSequence(deployCreateResponse: BroadcastTxResponse): { dseq: number, oseq: number, gseq: number } {
+export function findDeploymentSequence(
+  deployCreateResponse: BroadcastTxResponse
+): { dseq: number; oseq: number; gseq: number } {
   const logs = parseRawLog(deployCreateResponse.rawLog);
   const eventType = "akash.v1";
   return {
     dseq: Number(findAttribute(logs, eventType, "dseq").value),
     gseq: Number(findAttribute(logs, eventType, "gseq").value),
-    oseq: Number(findAttribute(logs, eventType, "oseq").value)
+    oseq: Number(findAttribute(logs, eventType, "oseq").value),
   };
 }
